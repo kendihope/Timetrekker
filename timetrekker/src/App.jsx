@@ -8,6 +8,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { supabase } from "./lib/supabaseClient";
 import Auth from "./components/Auth";
 import * as api from "./lib/api";
+import { subscribeToPush, unsubscribeFromPush, pushSupported } from "./lib/push";
 
 const DONUT_COLORS = ["#3B82F6", "#F59E0B", "#EF4444", "#10B981", "#8B5CF6", "#EC4899"];
 const MAX_EMBED_BYTES = 1500000;
@@ -316,8 +317,34 @@ export default function LifeScheduleApp() {
     try { await api.updateProfileRow(userId, { use_system_settings: v }); } catch { showToast("Couldn't save setting"); }
   };
   const setPushNotifications = async (v) => {
-    setData({ ...data, pushNotificationsEnabled: v });
-    try { await api.updateProfileRow(userId, { push_notifications_enabled: v }); } catch { showToast("Couldn't save setting"); }
+    if (v) {
+      try {
+        const sub = await subscribeToPush();
+        await api.savePushSubscription(userId, sub);
+        setData({ ...data, pushNotificationsEnabled: true });
+        await api.updateProfileRow(userId, { push_notifications_enabled: true });
+        showToast("Notifications enabled");
+      } catch (err) {
+        showToast(err.message || "Couldn't enable notifications");
+      }
+    } else {
+      try {
+        const endpoint = await unsubscribeFromPush();
+        if (endpoint) await api.removePushSubscription(endpoint);
+      } catch {
+        // ignore — we still want to flip the preference off locally
+      }
+      setData({ ...data, pushNotificationsEnabled: false });
+      try { await api.updateProfileRow(userId, { push_notifications_enabled: false }); } catch { showToast("Couldn't save setting"); }
+    }
+  };
+  const sendTestNotification = async () => {
+    try {
+      await api.sendTestPush(userId);
+      showToast("Test notification sent");
+    } catch {
+      showToast("Couldn't send test notification");
+    }
   };
   const updateProfile = async (fields) => {
     setData({ ...data, ...fields });
@@ -449,6 +476,7 @@ export default function LifeScheduleApp() {
             setThemeColor={setThemeColor}
             setUseSystemSettings={setUseSystemSettings}
             setPushNotifications={setPushNotifications}
+            onSendTestNotification={sendTestNotification}
             updateProfile={updateProfile}
             resetAllData={resetAllData}
             onLogout={handleLogout}
@@ -489,8 +517,6 @@ export default function LifeScheduleApp() {
     </div>
   );
 }
-
-// ================= HOME =================
 function Home({ data, initials, openAssignments, todaysTasks, toggleTask, onToggleAssignment, onBumpAssignment, openAddAssignment, goTo, openClass, showToast, accent }) {
   const [query, setQuery] = useState("");
   const hour = new Date().getHours();
@@ -1221,7 +1247,7 @@ function ResourcesScreen({ resources, goHome, openAdd, onDelete }) {
 }
 
 // ================= PROFILE / SETTINGS =================
-function ProfileScreen({ data, goHome, setThemeColor, setUseSystemSettings, setPushNotifications, updateProfile, resetAllData, onLogout, showToast, accent }) {
+function ProfileScreen({ data, goHome, setThemeColor, setUseSystemSettings, setPushNotifications, onSendTestNotification, updateProfile, resetAllData, onLogout, showToast, accent }) {
   const [tab, setTab] = useState("Profile");
   const [section, setSection] = useState(null); // null | "personalInfo" | "privacy"
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1292,12 +1318,19 @@ function ProfileScreen({ data, goHome, setThemeColor, setUseSystemSettings, setP
                 </span>
                 <ChevronRight size={16} className="text-neutral-600" />
               </button>
-              <div className="w-full bg-neutral-900 rounded-2xl px-4 py-3 flex items-center justify-between">
-                <span className="flex items-center gap-3 text-sm font-medium">
-                  <BellRing size={17} className="text-neutral-400" />
-                  Push notifications
-                </span>
-                <Switch on={data.pushNotificationsEnabled} onToggle={() => setPushNotifications(!data.pushNotificationsEnabled)} accent={accent} />
+              <div className="w-full bg-neutral-900 rounded-2xl px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-3 text-sm font-medium">
+                    <BellRing size={17} className="text-neutral-400" />
+                    Push notifications
+                  </span>
+                  <Switch on={data.pushNotificationsEnabled} onToggle={() => setPushNotifications(!data.pushNotificationsEnabled)} accent={accent} />
+                </div>
+                {data.pushNotificationsEnabled && (
+                  <button onClick={onSendTestNotification} className={`text-xs font-semibold ${accent.text} mt-3`}>
+                    Send a test notification
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1639,3 +1672,5 @@ function AddResourceModal({ onClose, onSave, accent }) {
     </ModalShell>
   );
 }
+
+// ================= HOME =================
