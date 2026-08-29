@@ -160,7 +160,31 @@ export async function removeResource(id, storagePath) {
   if (error) throw error;
 }
 
-// ---------- Full data wipe (keeps the account, clears everything else) ----------
+// ---------- Push notification subscriptions ----------
+export async function savePushSubscription(userId, sub) {
+  const { error } = await supabase.from("push_subscriptions").upsert(
+    { user_id: userId, endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+    { onConflict: "endpoint" }
+  );
+  if (error) throw error;
+}
+export async function removePushSubscription(endpoint) {
+  const { error } = await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
+  if (error) throw error;
+}
+export async function sendTestPush(userId) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-push`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ userId, title: "Timetrekker", body: "This is a test notification — it works!" }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
 export async function wipeAllUserData(userId) {
   const { data: files } = await supabase.storage.from("resources").list(userId);
   if (files && files.length) {
@@ -176,4 +200,3 @@ export async function wipeAllUserData(userId) {
   ]);
   await supabase.from("budget_profile").update({ total_budget: 0, income: 0, savings: 0 }).eq("user_id", userId);
 }
-
