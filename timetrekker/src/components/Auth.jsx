@@ -13,23 +13,54 @@ function GoogleIcon() {
 }
 
 export default function Auth() {
+  const [mode, setMode] = useState("signup"); // "signup" | "login"
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState("idle"); // idle | sending | sent | error
   const [errorMsg, setErrorMsg] = useState("");
 
-  const handleEmailSignup = async () => {
-    if (!email.trim()) return;
+  const handleSubmit = async () => {
+    if (!email.trim() || !password) return;
+    if (mode === "signup") {
+      if (password.length < 8) {
+        setStatus("error");
+        setErrorMsg("Password must be at least 8 characters.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setStatus("error");
+        setErrorMsg("Passwords don't match.");
+        return;
+      }
+    }
     setStatus("sending");
     setErrorMsg("");
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo: window.location.origin },
-    });
-    if (error) {
-      setStatus("error");
-      setErrorMsg(error.message);
+
+    if (mode === "signup") {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { emailRedirectTo: window.location.origin },
+      });
+      if (error) {
+        setStatus("error");
+        setErrorMsg(error.message);
+      } else if (data.session) {
+        // Email confirmation is disabled in Supabase -> signed in immediately
+        setStatus("idle");
+      } else {
+        // Email confirmation required -> one link to click, then password login works forever after
+        setStatus("sent");
+      }
     } else {
-      setStatus("sent");
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) {
+        setStatus("error");
+        setErrorMsg(error.message);
+      } else {
+        setStatus("idle");
+      }
     }
   };
 
@@ -49,31 +80,60 @@ export default function Auth() {
         <div className="text-center max-w-sm">
           <h2 className="text-2xl font-bold text-black mb-2">Check your email</h2>
           <p className="text-black/70">
-            We sent a sign-in link to <span className="font-semibold">{email}</span>. Open it on this device to finish signing up —
-            you won't need to sign in again after that.
+            We sent a confirmation link to <span className="font-semibold">{email}</span>. Click it once to activate your
+            account — after that, you can log in directly with your email and password, no email needed.
           </p>
         </div>
       ) : (
         <div className="w-full max-w-sm">
-          <h2 className="text-2xl font-bold text-black mb-1 text-center">Create an account</h2>
-          <p className="text-black/70 mb-6 text-center">Enter your email to sign up</p>
+          <h2 className="text-2xl font-bold text-black mb-1 text-center">
+            {mode === "signup" ? "Create an account" : "Welcome back"}
+          </h2>
+          <p className="text-black/70 mb-6 text-center">
+            {mode === "signup" ? "Enter your email and a password to sign up" : "Log in with your email and password"}
+          </p>
 
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="email@domain.com"
-            className="w-full bg-white rounded-2xl px-5 py-4 text-lg mb-4 outline-none"
+            className="w-full bg-white rounded-2xl px-5 py-4 text-lg mb-3 outline-none"
           />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password (min. 8 characters)"
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            className="w-full bg-white rounded-2xl px-5 py-4 text-lg mb-3 outline-none"
+          />
+          {mode === "signup" && (
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirm password"
+              autoComplete="new-password"
+              className="w-full bg-white rounded-2xl px-5 py-4 text-lg mb-4 outline-none"
+            />
+          )}
 
           {status === "error" && <p className="text-sm text-red-900 bg-red-200 rounded-xl px-4 py-2 mb-4">{errorMsg}</p>}
 
           <button
-            onClick={handleEmailSignup}
-            disabled={status === "sending" || !email.trim()}
-            className="w-full bg-black text-white rounded-2xl py-4 font-semibold text-lg mb-6 disabled:opacity-50"
+            onClick={handleSubmit}
+            disabled={status === "sending" || !email.trim() || !password}
+            className="w-full bg-black text-white rounded-2xl py-4 font-semibold text-lg mb-4 disabled:opacity-50"
           >
-            {status === "sending" ? "Sending..." : "Sign up with email"}
+            {status === "sending" ? "Please wait..." : mode === "signup" ? "Sign up with email" : "Log in"}
+          </button>
+
+          <button
+            onClick={() => { setMode(mode === "signup" ? "login" : "signup"); setStatus("idle"); setErrorMsg(""); setConfirmPassword(""); }}
+            className="w-full text-center text-sm text-black/80 mb-6 underline"
+          >
+            {mode === "signup" ? "Already have an account? Log in" : "New here? Create an account"}
           </button>
 
           <div className="flex items-center gap-3 w-full mb-6">
